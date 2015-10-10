@@ -2,6 +2,9 @@
 - hosts: all
   sudo: true
 
+  vars:
+    use_local: true
+
   pre_tasks:
     - name: dependecies
       apt: name={{ item }}
@@ -38,6 +41,7 @@
         - godep go build -a ./cmd/...
         - mv ./transporter /home/vagrant
         - chown -R vagrant:vagrant /home/vagrant/
+      when: not use_local
 
   tasks:
     - name: copy simple test files
@@ -54,5 +58,12 @@
         owner=vagrant
         group=vagrant
         mode=0775
+    - name: copy executable
+      copy:
+        src=./transporter
+        dest=/home/vagrant/
+        owner=vagrant
+        group=vagrant
+      when: use_local
 
 

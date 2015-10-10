@@ -2,7 +2,7 @@ package state
 
 import (
 	"bytes"
-	"encoding/gob"
+	"encoding/gob" //this is going to be a small file, why binary encode it, json makes it easy to understand, debug and recover
 	"fmt"
 	"os"
 	"os/signal"
@@ -57,7 +57,9 @@ func (f *filestore) flushToDisk() error {
 		return err
 	}
 
-	fh, eopen := os.OpenFile(f.filename, os.O_CREATE|os.O_WRONLY, 0666)
+	// if the file isn't truncated on every open then it'll have leftovers from the last save
+	// why open and close every time? also creating a new file everytime and then renaming it would prevent data loss
+	fh, eopen := os.OpenFile(f.filename, os.O_TRUNC|os.O_WRONLY, 0666)
 	defer fh.Close()
 	if eopen != nil {
 		fmt.Printf("error opening file %s\n", eopen.Error())

@@ -23,6 +23,7 @@ type Msg struct {
 	Op        OpType
 	Data      interface{}
 	Namespace string
+	State     map[string]interface{}
 }
 
 // NewMsg returns a new Msg with the ID extracted
@@ -33,6 +34,7 @@ func NewMsg(op OpType, data interface{}, namespace string) *Msg {
 		Op:        op,
 		Data:      data,
 		Namespace: namespace,
+		State:     make(map[string]interface{}),
 	}
 
 	return m

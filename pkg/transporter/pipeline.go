@@ -200,6 +200,8 @@ func (pipeline *Pipeline) setState() {
 
 		// do something with the node
 		if node.Type != "transformer" && node.pipe.LastMsg != nil {
+			//this introduces a race condition between LastMsg and ExtraState, whereby another thread can change LastMsg or ExtraState
+			//such that one doesn't correspond with the other
 			pipeline.sessionStore.Set(node.Path(), &state.MsgState{Msg: node.pipe.LastMsg, Extra: node.pipe.ExtraState})
 		}
 

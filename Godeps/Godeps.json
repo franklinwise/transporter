@@ -2,7 +2,7 @@
 	"ImportPath": "github.com/compose/transporter",
 	"GoVersion": "go1.4.2",
 	"Packages": [
-		"./..."
+		"./cmd/..."
 	],
 	"Deps": [
 		{
@@ -42,6 +42,10 @@
 			"Rev": "8aca6ba2cc6e873299617d730fac0d7f6593113a"
 		},
 		{
+			"ImportPath": "github.com/fatih/structs",
+			"Rev": "a9f7daa9c2729e97450c2da2feda19130a367d8f"
+		},
+		{
 			"ImportPath": "github.com/golang/protobuf/proto",
 			"Rev": "67cbcadfc96f21404e1d5ef40e7f3b35b0a073c5"
 		},
@@ -57,6 +61,10 @@
 		{
 			"ImportPath": "github.com/mitchellh/cli",
 			"Rev": "e3c2e3d39391e9beb9660ccd6b4bd9a2f38dd8a0"
+		},
+		{
+			"ImportPath": "github.com/mitchellh/mapstructure",
+			"Rev": "281073eb9eb092240d33ef253c404f1cca550309"
 		},
 		{
 			"ImportPath": "github.com/nu7hatch/gouuid",

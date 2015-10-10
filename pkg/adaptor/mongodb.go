@@ -12,6 +12,8 @@ import (
 
 	"github.com/compose/transporter/pkg/message"
 	"github.com/compose/transporter/pkg/pipe"
+	"github.com/fatih/structs"
+	"github.com/mitchellh/mapstructure"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 )
@@ -20,6 +22,18 @@ const (
 	MONGO_BUFFER_SIZE int = 1e6
 	MONGO_BUFFER_LEN  int = 5e5
 )
+
+type MongodbState struct {
+	Mode        string `json:"mode"`
+	Id          string `json:"id"`
+	MonotonicTS int64  `json:"monotonicTS"`
+}
+
+// There are two modes here.
+// 1) An all data mode, all mongo data from the db, called 'cat'.
+// 2) An updates only mode, just tail from the last known position
+// If 2 gets too far behind, and the oplog's capped collection rolls over, then doing a full sync #1
+// will be required
 
 // Mongodb is an adaptor to read / write to mongodb.
 // it works as a source by copying files, and then optionally tailing the oplog
@@ -33,11 +47,11 @@ type Mongodb struct {
 	collectionMatch *regexp.Regexp
 	database        string
 
-	oplogTime bson.MongoTimestamp
-
 	//
 	pipe *pipe.Pipe
 	path string
+
+	startState *MongodbState
 
 	// mongo connection and options
 	mongoSession *mgo.Session
@@ -158,10 +172,11 @@ func (m *Mongodb) Start() (err error) {
 		m.pipe.Stop()
 	}()
 
-	m.oplogTime = nowAsMongoTimestamp()
-	if m.debug {
-		fmt.Printf("setting start timestamp: %d\n", m.oplogTime)
+	state := &MongodbState{}
+	if lastMsg := m.pipe.LastMsg; lastMsg != nil && lastMsg.State != nil {
+		mapstructure.Decode(lastMsg.State, &state)
 	}
+	m.startState = state
 
 	err = m.catData()
 	if err != nil {
@@ -318,9 +333,14 @@ func (m *Mongodb) writeBuffer() {
 	m.opsBufferSize = 0
 }
 
-// catdata pulls down the original collections
+// catdata pulls down the entire dataset from mongo
 func (m *Mongodb) catData() (err error) {
+	if m.startState.Mode == "tail" {
+		return nil
+	}
+
 	collections, _ := m.mongoSession.DB(m.database).CollectionNames()
+
 	for _, collection := range collections {
 		if strings.HasPrefix(collection, "system.") {
 			continue
@@ -333,6 +353,12 @@ func (m *Mongodb) catData() (err error) {
 			result bson.M // hold the document
 		)
 
+		if m.startState.Id != "" {
+			query = bson.M{
+				"_id": bson.M{"$gte": m.startState.Id},
+			}
+		}
+
 		iter := m.mongoSession.DB(m.database).C(collection).Find(query).Sort("_id").Iter()
 
 		for {
@@ -343,6 +369,10 @@ func (m *Mongodb) catData() (err error) {
 
 				// set up the message
 				msg := message.NewMsg(message.Insert, result, m.computeNamespace(collection))
+				msg.State = structs.Map(&MongodbState{
+					Id:   result["_id"].(string),
+					Mode: "cat",
+				})
 
 				m.pipe.Send(msg)
 				result = bson.M{}
@@ -368,18 +398,19 @@ func (m *Mongodb) catData() (err error) {
 
 /*
  * tail the oplog
+ * https://www.mongodb.com/presentations/building-real-time-systems-mongodb-using-oplog-stripe
+ * TODO: determine if we're too far out out of sync to do a tail and need to do a full sync
  */
 func (m *Mongodb) tailData() (err error) {
 
 	var (
-		collection = m.mongoSession.DB("local").C("oplog.rs")
-		result     oplogDoc // hold the document
-		query      = bson.M{
-			"ts": bson.M{"$gte": m.oplogTime},
-		}
-
-		iter = collection.Find(query).LogReplay().Sort("$natural").Tail(m.oplogTimeout)
+		logPosition bson.MongoTimestamp = bson.MongoTimestamp(m.startState.MonotonicTS)
+		collection                      = m.mongoSession.DB("local").C("oplog.rs")
+		result      oplogDoc            // hold the document
+		query       = bson.M{"ts": bson.M{"$gte": logPosition}}
 	)
+
+	iter := collection.Find(query).LogReplay().Sort("$natural").Tail(m.oplogTimeout)
 
 	for {
 		for iter.Next(&result) {
@@ -415,7 +446,13 @@ func (m *Mongodb) tailData() (err error) {
 				msg := message.NewMsg(message.OpTypeFromString(result.Op), doc, m.computeNamespace(coll))
 				msg.Timestamp = int64(result.Ts) >> 32
 
-				m.oplogTime = result.Ts
+				logPosition = result.Ts
+
+				msg.State = structs.Map(&MongodbState{
+					MonotonicTS: int64(result.Ts),
+					Mode:        "tail",
+				})
+
 				m.pipe.Send(msg)
 			}
 			result = oplogDoc{}
@@ -433,9 +470,9 @@ func (m *Mongodb) tailData() (err error) {
 			return NewError(CRITICAL, m.path, fmt.Sprintf("Mongodb error (error reading collection %s)", iter.Err()), nil)
 		}
 
-		// query will change,
+		// poll from the last known position
 		query = bson.M{
-			"ts": bson.M{"$gte": m.oplogTime},
+			"ts": bson.M{"$gte": logPosition},
 		}
 		iter = collection.Find(query).LogReplay().Tail(m.oplogTimeout)
 	}

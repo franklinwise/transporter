@@ -2,9 +2,6 @@
 - hosts: all
   sudo: true
 
-  vars:
-    use_local: true
-
   pre_tasks:
     - name: dependecies
       apt: name={{ item }}
@@ -32,7 +29,7 @@
       elasticsearch_index_number_of_replicas: 1
 
     - role: gotansible.gobuild
-      gobuild_project_path: github.com/compose/transporter
+      gobuild_project_path: github.com/franklinwise/transporter
       gobuild_repo_version: master
       gobuild_dir: /home/vagrant/go
       gobuild_commands:
@@ -41,7 +38,6 @@
         - godep go build -a ./cmd/...
         - mv ./transporter /home/vagrant
         - chown -R vagrant:vagrant /home/vagrant/
-      when: not use_local
 
   tasks:
     - name: copy simple test files
@@ -58,12 +54,4 @@
         owner=vagrant
         group=vagrant
         mode=0775
-    - name: copy executable
-      copy:
-        src=./transporter
-        dest=/home/vagrant/
-        owner=vagrant
-        group=vagrant
-      when: use_local
-
 
